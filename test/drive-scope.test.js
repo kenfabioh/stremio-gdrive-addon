@@ -125,3 +125,26 @@ test("excessively deep discovery stops with an error rather than silently trunca
   await assert.rejects(scope.folders(), /request limit/);
   assert.equal(calls.length, 24);
 });
+
+test("fallback corpora identify personal and shared roots, deduplicate drives and cache metadata", async (t) => {
+  let reads = 0;
+  t.mock.method(globalThis, "fetch", async (input) => {
+    reads++;
+    const id = new URL(input).pathname.split("/").at(-1);
+    return Response.json({
+      id,
+      mimeType: MIME,
+      ...(id === "personal" ? {} : { driveId: "sharedDrive" }),
+    });
+  });
+  const scope = createDriveScope({
+    roots: ["personal", "shared1", "shared2"],
+    getToken: async () => "fake",
+  });
+  assert.deepEqual(await scope.fallbackCorpora(), [
+    { corpora: "user" },
+    { corpora: "drive", driveId: "sharedDrive" },
+  ]);
+  await scope.fallbackCorpora();
+  assert.equal(reads, 3);
+});

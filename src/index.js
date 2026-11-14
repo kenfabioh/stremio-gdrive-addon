@@ -1,5 +1,13 @@
-import { createDriveScope } from "./drive-scope.js";
+import { createDriveScope, parentQuery } from "./drive-scope.js";
 import { createSubtitleService, TimedCache } from "./subtitles.js";
+
+class DriveListError extends Error {
+  constructor(code, upstreamStatus) {
+    super("Google Drive listing unavailable");
+    this.code = code;
+    this.upstreamStatus = upstreamStatus;
+  }
+}
 
 export function createAddon(env) {
   const CREDENTIALS = {
@@ -49,7 +57,7 @@ export function createAddon(env) {
 
   const MANIFEST = {
     id: "stremio.gdrive.worker",
-    version: "1.2.0",
+    version: "1.2.1",
     name: CONFIG.addonName,
     description: "Stream your files from Google Drive within Stremio!",
     catalogs: [],
@@ -705,6 +713,7 @@ export function createAddon(env) {
     getToken: getAccessToken,
   });
   const metadataCache = new TimedCache(60_000, 200);
+  const catalogCache = new TimedCache(60_000, 1);
   async function getProtectedFile(id) {
     if (!/^[a-zA-Z0-9_-]+$/.test(id || "")) return null;
     return metadataCache.get(id, async () => {
@@ -730,7 +739,8 @@ export function createAddon(env) {
   }
 
   async function fetchScopedFiles(fetchUrl, accessToken) {
-    const queries = await driveScope.queries(fetchUrl.searchParams.get("q"));
+    const baseQuery = fetchUrl.searchParams.get("q");
+    const batches = await driveScope.batches(baseQuery);
     const combined = { files: [] };
     const orderBy = fetchUrl.searchParams.get("orderBy");
     const ordered = ["createdTime desc", "modifiedTime desc"].includes(orderBy);
@@ -741,11 +751,55 @@ export function createAddon(env) {
         a[sortField] || a.createdTime || "",
       );
     const seen = new Set();
-    for (const query of queries) {
+    for (const { query, parents } of batches) {
       const scopedUrl = new URL(fetchUrl);
       scopedUrl.searchParams.set("q", query);
-      const page = await fetchFiles(scopedUrl, accessToken);
-      if (!page) return null;
+      let page;
+      try {
+        page = await fetchFiles(scopedUrl, accessToken);
+      } catch (error) {
+        if (
+          !ordered ||
+          !(error instanceof DriveListError) ||
+          !(error.upstreamStatus >= 500 && error.upstreamStatus <= 599)
+        )
+          throw error;
+        // Prefer the actual root's corpus when the allDrives backend fails.
+        // Retain the same parent filter, and avoid failing server-side sorting.
+        let corpora;
+        try {
+          corpora = await driveScope.fallbackCorpora();
+        } catch (lookupError) {
+          throw new DriveListError(
+            "ROOT_FOLDER_LOOKUP_FAILED",
+            lookupError.upstreamStatus,
+          );
+        }
+        const recovered = { files: [] };
+        outer: for (const corpus of corpora) {
+          for (let offset = 0; offset < (parents?.length || 1); offset += 5) {
+            const parentGroup = parents
+              ? parents.slice(offset, offset + 5)
+              : null;
+            const retryUrl = new URL(scopedUrl);
+            retryUrl.searchParams.delete("orderBy");
+            retryUrl.searchParams.delete("pageToken");
+            retryUrl.searchParams.delete("driveId");
+            if (parentGroup)
+              retryUrl.searchParams.set(
+                "q",
+                `${baseQuery} and ${parentQuery(parentGroup)}`,
+              );
+            for (const [key, value] of Object.entries(corpus))
+              retryUrl.searchParams.set(key, value);
+            const result = await fetchFiles(retryUrl, accessToken);
+            recovered.files.push(...result.files);
+            recovered.incompleteSearch ||= result.incompleteSearch;
+            if (recovered.files.length >= CONFIG.maxFilesToFetch) break outer;
+          }
+        }
+        page = recovered;
+      }
       combined.incompleteSearch ||= page.incompleteSearch;
       for (const file of page.files) {
         if (!seen.has(file.id)) {
@@ -764,14 +818,16 @@ export function createAddon(env) {
   }
 
   async function fetchFiles(fetchUrl, accessToken) {
+    let pagesRead = 0;
     try {
+      pagesRead++;
       const response = await fetch(fetchUrl.toString(), {
         headers: { Authorization: `Bearer ${accessToken}` },
       });
 
       if (!response.ok) {
-        let err = await response.text();
-        throw new Error(err);
+        await response.body?.cancel();
+        throw new DriveListError("DRIVE_API_ERROR", response.status);
       }
       // handle paginated results
 
@@ -784,16 +840,17 @@ export function createAddon(env) {
         results.files.length < CONFIG.maxFilesToFetch
       ) {
         if (visitedPages.has(results.nextPageToken))
-          throw new Error("Repeated Drive page token");
+          throw new DriveListError("DRIVE_PAGINATION_LOOP");
         visitedPages.add(results.nextPageToken);
         fetchUrl.searchParams.set("pageToken", results.nextPageToken);
+        pagesRead++;
         const nextPageResponse = await fetch(fetchUrl.toString(), {
           headers: { Authorization: `Bearer ${accessToken}` },
         });
 
         if (!nextPageResponse.ok) {
-          let err = await nextPageResponse.text();
-          throw new Error(err);
+          await nextPageResponse.body?.cancel();
+          throw new DriveListError("DRIVE_API_ERROR", nextPageResponse.status);
         }
 
         const nextPageResults = await nextPageResponse.json();
@@ -808,9 +865,20 @@ export function createAddon(env) {
 
       results.files = results.files.slice(0, CONFIG.maxFilesToFetch);
       return results;
-    } catch {
-      // A failed Drive query must not masquerade as an empty library.
-      throw new Error("Google Drive listing unavailable");
+    } catch (error) {
+      // Expose only bounded, non-sensitive diagnostics, never Google's response body.
+      const failure =
+        error instanceof DriveListError
+          ? error
+          : new DriveListError(
+              /too many subrequests/i.test(error.message || "")
+                ? "WORKER_SUBREQUEST_LIMIT"
+                : "DRIVE_FETCH_FAILED",
+            );
+      failure.pagesRead = pagesRead;
+      failure.corpus = fetchUrl.searchParams.get("corpora");
+      failure.serverSorted = fetchUrl.searchParams.has("orderBy");
+      throw failure;
     }
   }
 
@@ -1126,7 +1194,9 @@ export function createAddon(env) {
             });
           }
 
-          const results = await fetchScopedFiles(fetchUrl, accessToken);
+          const results = await catalogCache.get("list", () =>
+            fetchScopedFiles(fetchUrl, accessToken),
+          );
           const metas = (results?.files || []).map((file) =>
             createMetaObject(
               file.id,
@@ -1239,7 +1309,21 @@ export function createAddon(env) {
       }
       return createJsonResponse({ streams: streams });
     } catch (error) {
-      return createJsonResponse({ error: "Service unavailable" }, 502);
+      return createJsonResponse(
+        {
+          error: "Service unavailable",
+          ...(error instanceof DriveListError
+            ? {
+                code: error.code,
+                upstreamStatus: error.upstreamStatus,
+                pagesRead: error.pagesRead,
+                corpus: error.corpus,
+                serverSorted: error.serverSorted,
+              }
+            : {}),
+        },
+        502,
+      );
     }
   }
 

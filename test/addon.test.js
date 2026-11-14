@@ -39,6 +39,7 @@ function setup(t, overrides = {}) {
   const calls = [];
   const files = {
     video,
+    folder: { id: "folder", mimeType: "application/vnd.google-apps.folder" },
     ...Object.fromEntries(subs.map((s) => [s.id, s])),
     private: { ...video, id: "private", parents: ["other"] },
     gone: { ...video, id: "gone", trashed: true },
@@ -572,7 +573,7 @@ test("Drive repeated pagination token fails safely without looping", async (t) =
   });
   const response = await request("/catalog/movie/gdrive_list.json");
   assert.equal(response.status, 502);
-  assert.deepEqual(await response.json(), { error: "Service unavailable" });
+  assert.equal((await response.json()).error, "Service unavailable");
   assert.equal(
     calls.filter((c) => c.url.pathname === "/drive/v3/files").length,
     2,
@@ -766,5 +767,147 @@ test("Drive API failures return an error instead of an empty successful catalog"
   assert.equal(response.status, 502);
   const body = await response.text();
   assert.doesNotMatch(body, /test-secret|private upstream/);
-  assert.deepEqual(JSON.parse(body), { error: "Service unavailable" });
+  assert.equal(JSON.parse(body).error, "Service unavailable");
+  assert.equal(JSON.parse(body).upstreamStatus, 503);
+  assert.equal(JSON.parse(body).code, "DRIVE_API_ERROR");
+});
+
+test("subrequest limit diagnostics contain no raw error details or credentials", async (t) => {
+  const { request } = setup(t, {
+    handle: async (url) => {
+      if (url.pathname === "/drive/v3/files")
+        throw Error("Too many subrequests. private test-secret");
+    },
+  });
+  const response = await request("/catalog/movie/gdrive_list.json");
+  assert.equal(response.status, 502);
+  const body = await response.text();
+  assert.doesNotMatch(body, /private|test-secret/);
+  assert.equal(JSON.parse(body).code, "WORKER_SUBREQUEST_LIMIT");
+  assert.equal(JSON.parse(body).pagesRead, 1);
+});
+
+test("catalog retries Google 5xx once without sorting and sorts returned videos locally", async (t) => {
+  const { request, calls } = setup(t, {
+    handle: async (url) => {
+      if (url.pathname !== "/drive/v3/files") return;
+      if (url.searchParams.has("orderBy"))
+        return new Response(null, { status: 500 });
+      return Response.json({
+        files: [
+          { ...video, id: "old", modifiedTime: "2020-01-01T00:00:00Z" },
+          { ...video, id: "new", modifiedTime: "2026-01-01T00:00:00Z" },
+        ],
+      });
+    },
+  });
+  const response = await request("/catalog/movie/gdrive_list.json");
+  assert.equal(response.status, 200);
+  assert.deepEqual(
+    (await response.json()).metas.map((m) => m.id),
+    ["gdrive:new", "gdrive:old"],
+  );
+  const queries = calls.filter((c) => c.url.pathname === "/drive/v3/files");
+  assert.equal(queries.length, 2);
+  assert.equal(queries[0].url.searchParams.get("orderBy"), "modifiedTime desc");
+  assert.equal(queries[1].url.searchParams.has("orderBy"), false);
+  assert.equal(
+    queries[1].url.searchParams.get("q"),
+    queries[0].url.searchParams.get("q"),
+  );
+});
+
+test("catalog does not retry authentication errors or change scope on failure", async (t) => {
+  const { request, calls } = setup(t, {
+    handle: async (url) => {
+      if (url.pathname === "/drive/v3/files")
+        return new Response(null, { status: 403 });
+    },
+  });
+  const response = await request("/catalog/movie/gdrive_list.json");
+  assert.equal(response.status, 502);
+  assert.equal((await response.json()).upstreamStatus, 403);
+  assert.equal(
+    calls.filter((c) => c.url.pathname === "/drive/v3/files").length,
+    1,
+  );
+});
+
+test("catalog fallback targets the shared drive of its configured root", async (t) => {
+  const { request, calls } = setup(t, {
+    handle: async (url) => {
+      if (url.pathname === "/drive/v3/files/folder")
+        return Response.json({
+          id: "folder",
+          mimeType: "application/vnd.google-apps.folder",
+          driveId: "sharedDrive",
+        });
+      if (url.pathname === "/drive/v3/files") {
+        if (url.searchParams.get("corpora") === "allDrives")
+          return new Response(null, { status: 500 });
+        assert.equal(url.searchParams.get("corpora"), "drive");
+        assert.equal(url.searchParams.get("driveId"), "sharedDrive");
+        assert.equal(url.searchParams.has("orderBy"), false);
+        return Response.json({ files: [video] });
+      }
+    },
+  });
+  const response = await request("/catalog/movie/gdrive_list.json");
+  assert.equal(response.status, 200);
+  assert.equal((await response.json()).metas[0].id, "gdrive:video");
+  const lists = calls.filter((c) => c.url.pathname === "/drive/v3/files");
+  assert.equal(
+    lists[0].url.searchParams.get("q"),
+    lists[1].url.searchParams.get("q"),
+  );
+});
+
+test("failed broad queries recover in small folder batches and the successful catalog is cached", async (t) => {
+  const graph = Array.from({ length: 6 }, (_, i) => ({
+    id: "child" + i,
+    parents: ["folder"],
+    mimeType: "application/vnd.google-apps.folder",
+  }));
+  const { request, calls } = setup(t, {
+    env: { DRIVE_RECURSIVE: undefined },
+    handle: async (url) => {
+      const q = url.searchParams.get("q");
+      if (url.pathname === "/drive/v3/files/folder")
+        return Response.json({
+          id: "folder",
+          mimeType: "application/vnd.google-apps.folder",
+          driveId: "sharedDrive",
+        });
+      if (q?.includes("application/vnd.google-apps.folder"))
+        return Response.json({
+          files: q.includes("'folder' in parents") ? graph : [],
+        });
+      if (url.pathname === "/drive/v3/files") {
+        if (url.searchParams.get("corpora") === "allDrives")
+          return new Response(null, { status: 500 });
+        const parents = [...q.matchAll(/'([^']+)' in parents/g)].map(
+          (m) => m[1],
+        );
+        assert.ok(parents.length <= 5);
+        assert.equal(url.searchParams.get("driveId"), "sharedDrive");
+        return Response.json({
+          files: parents
+            .filter((id) => id !== "folder")
+            .map((id) => ({ ...video, id: "video_" + id, parents: [id] })),
+        });
+      }
+    },
+  });
+  const first = await (await request("/catalog/movie/gdrive_list.json")).json();
+  assert.equal(first.metas.length, 6);
+  const reads = calls.length;
+  assert.deepEqual(
+    await (await request("/catalog/movie/gdrive_list.json")).json(),
+    first,
+  );
+  assert.equal(calls.length, reads);
+  assert.equal(
+    calls.filter((c) => c.url.searchParams.get("corpora") === "drive").length,
+    2,
+  );
 });
