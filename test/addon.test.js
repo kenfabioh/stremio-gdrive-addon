@@ -535,3 +535,45 @@ test("origins remain request-local when concurrent streams share a Worker instan
     );
   }
 });
+
+test("Drive pagination continues through empty pages with a nextPageToken", async (t) => {
+  const { request, calls } = setup(t, {
+    handle: async (url) => {
+      if (url.pathname !== "/drive/v3/files") return;
+      const page = url.searchParams.get("pageToken");
+      if (!page)
+        return Response.json({ files: [], nextPageToken: "empty-page" });
+      if (page === "empty-page")
+        return Response.json({ nextPageToken: "video-page" });
+      assert.equal(page, "video-page");
+      return Response.json({ files: [video] });
+    },
+  });
+  const result = await (
+    await request("/catalog/movie/gdrive_list.json")
+  ).json();
+  assert.deepEqual(
+    result.metas.map((m) => m.id),
+    ["gdrive:video"],
+  );
+  assert.equal(
+    calls.filter((c) => c.url.pathname === "/drive/v3/files").length,
+    3,
+  );
+});
+
+test("Drive repeated pagination token fails safely without looping", async (t) => {
+  const { request, calls } = setup(t, {
+    handle: async (url) => {
+      if (url.pathname === "/drive/v3/files")
+        return Response.json({ files: [], nextPageToken: "repeat" });
+    },
+  });
+  const response = await request("/catalog/movie/gdrive_list.json");
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), { metas: [] });
+  assert.equal(
+    calls.filter((c) => c.url.pathname === "/drive/v3/files").length,
+    2,
+  );
+});

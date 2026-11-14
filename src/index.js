@@ -740,11 +740,15 @@ export function createAddon(env) {
 
       const results = await response.json();
       results.files ||= [];
+      const visitedPages = new Set();
 
       while (
         results.nextPageToken &&
         results.files.length < CONFIG.maxFilesToFetch
       ) {
+        if (visitedPages.has(results.nextPageToken))
+          throw new Error("Repeated Drive page token");
+        visitedPages.add(results.nextPageToken);
         fetchUrl.searchParams.set("pageToken", results.nextPageToken);
         const nextPageResponse = await fetch(fetchUrl.toString(), {
           headers: { Authorization: `Bearer ${accessToken}` },
@@ -756,15 +760,13 @@ export function createAddon(env) {
         }
 
         const nextPageResults = await nextPageResponse.json();
-        results.files = [...results.files, ...nextPageResults.files];
+        results.files = [...results.files, ...(nextPageResults.files || [])];
         results.nextPageToken = nextPageResults.nextPageToken;
 
         if (results.files.length >= CONFIG.maxFilesToFetch) {
           break;
         }
-        if (nextPageResults.files.length === 0) {
-          break;
-        }
+        // Drive may return empty intermediate pages. Only nextPageToken marks the end.
       }
 
       results.files = results.files.slice(0, CONFIG.maxFilesToFetch);
