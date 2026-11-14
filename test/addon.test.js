@@ -571,8 +571,8 @@ test("Drive repeated pagination token fails safely without looping", async (t) =
     },
   });
   const response = await request("/catalog/movie/gdrive_list.json");
-  assert.equal(response.status, 200);
-  assert.deepEqual(await response.json(), { metas: [] });
+  assert.equal(response.status, 502);
+  assert.deepEqual(await response.json(), { error: "Service unavailable" });
   assert.equal(
     calls.filter((c) => c.url.pathname === "/drive/v3/files").length,
     2,
@@ -743,4 +743,28 @@ test("recursive catalog keeps global newest-first order across folder batches at
   ).json();
   assert.equal(result.metas.length, 1000);
   assert.equal(result.metas[0].id, "gdrive:newest");
+});
+
+test("catalog uses the recommended Drive modifiedTime order and requests that field", async (t) => {
+  const { request, calls } = setup(t);
+  assert.equal((await request("/catalog/movie/gdrive_list.json")).status, 200);
+  const list = calls.find((c) => c.url.pathname === "/drive/v3/files");
+  assert.equal(list.url.searchParams.get("orderBy"), "modifiedTime desc");
+  assert.match(list.url.searchParams.get("fields"), /modifiedTime/);
+});
+
+test("Drive API failures return an error instead of an empty successful catalog", async (t) => {
+  const { request } = setup(t, {
+    handle: async (url) => {
+      if (url.pathname === "/drive/v3/files")
+        return new Response("private upstream detail test-secret", {
+          status: 503,
+        });
+    },
+  });
+  const response = await request("/catalog/movie/gdrive_list.json");
+  assert.equal(response.status, 502);
+  const body = await response.text();
+  assert.doesNotMatch(body, /test-secret|private upstream/);
+  assert.deepEqual(JSON.parse(body), { error: "Service unavailable" });
 });
