@@ -10,6 +10,7 @@ const env = {
   REFRESH_TOKEN: "test-refresh",
   ADDON_TOKEN: token,
   DRIVE_FOLDER_IDS: "folder",
+  DRIVE_RECURSIVE: "false",
 };
 const base = `https://addon.example/${token}`;
 const video = {
@@ -576,4 +577,170 @@ test("Drive repeated pagination token fails safely without looping", async (t) =
     calls.filter((c) => c.url.pathname === "/drive/v3/files").length,
     2,
   );
+});
+
+function recursiveSetup(t, extra = {}) {
+  const deepVideo = { ...video, parents: ["season"] };
+  const deepSubs = subs.map((s) => ({
+    ...s,
+    parents: s.id === "elsewhere" ? ["other"] : ["season"],
+  }));
+  const graph = [
+    {
+      id: "series",
+      parents: ["folder"],
+      mimeType: "application/vnd.google-apps.folder",
+    },
+    {
+      id: "season",
+      parents: ["series"],
+      mimeType: "application/vnd.google-apps.folder",
+    },
+  ];
+  return setup(t, {
+    env: { DRIVE_RECURSIVE: undefined, ...extra.env },
+    handle: async (url, options) => {
+      const q = url.searchParams.get("q");
+      if (q?.includes("application/vnd.google-apps.folder")) {
+        if (extra.folderError) return new Response(null, { status: 503 });
+        const ids = [...q.matchAll(/'([^']+)' in parents/g)].map((m) => m[1]);
+        return Response.json({
+          files: graph.filter((f) => f.parents.some((p) => ids.includes(p))),
+        });
+      }
+      if (url.searchParams.get("alt") === "media") return;
+      if (url.pathname.endsWith("/video")) return Response.json(deepVideo);
+      const sidecar = deepSubs.find((s) => url.pathname.endsWith("/" + s.id));
+      if (sidecar) return Response.json(sidecar);
+      if (q?.includes(".srt")) return Response.json({ files: deepSubs });
+      if (url.pathname === "/drive/v3/files")
+        return Response.json({
+          files: q?.includes("'season' in parents") ? [deepVideo] : [],
+        });
+    },
+  });
+}
+
+test("default recursion covers nested catalog/search/IMDb streams, metadata, subtitles and playback", async (t) => {
+  const { request, calls } = recursiveSetup(t);
+  for (const path of [
+    "/catalog/movie/gdrive_list.json",
+    "/catalog/movie/gdrive_search/search=Avatar.json",
+  ]) {
+    const response = await request(path);
+    assert.equal(response.status, 200);
+    assert.equal((await response.json()).metas[0].id, "gdrive:video");
+  }
+  assert.equal(
+    (await (await request("/meta/movie/gdrive:video.json")).json()).meta.id,
+    "gdrive:video",
+  );
+  for (const path of [
+    "/stream/movie/gdrive:video.json",
+    "/stream/movie/tt0499549.json",
+  ]) {
+    const result = await (await request(path)).json();
+    assert.equal(result.streams[0].subtitles.length, 3);
+  }
+  assert.equal(
+    (await (await request("/subtitles/movie/gdrive:video.json")).json())
+      .subtitles.length,
+    3,
+  );
+  assert.equal(
+    (
+      await (
+        await request(
+          "/subtitles/movie/tt0499549/filename=Avatar.2009.mkv.json",
+        )
+      ).json()
+    ).subtitles.length,
+    3,
+  );
+  assert.equal(
+    (
+      await request("/playback/video/x.mkv", {
+        headers: { Range: "bytes=0-2" },
+      })
+    ).status,
+    206,
+  );
+  assert.equal(await (await request("/subtitle/pt/subtitle.srt")).text(), srt);
+  assert.equal((await request("/playback/private/x.mkv")).status, 404);
+  assert.equal((await request("/subtitle/elsewhere/subtitle.srt")).status, 404);
+  assert.equal(
+    calls.filter((c) =>
+      c.url.searchParams
+        .get("q")
+        ?.includes("application/vnd.google-apps.folder"),
+    ).length,
+    3,
+  );
+});
+
+test("explicit direct-only setting excludes videos in nested folders", async (t) => {
+  const { request, calls } = recursiveSetup(t, {
+    env: { DRIVE_RECURSIVE: "false" },
+  });
+  assert.deepEqual(
+    await (await request("/catalog/movie/gdrive_list.json")).json(),
+    { metas: [] },
+  );
+  assert.equal((await request("/stream/movie/gdrive:video.json")).status, 404);
+  assert.equal(
+    calls.filter((c) =>
+      c.url.searchParams
+        .get("q")
+        ?.includes("application/vnd.google-apps.folder"),
+    ).length,
+    0,
+  );
+});
+
+test("recursive listing and playback fail closed when folder discovery is unavailable", async (t) => {
+  const { request, calls } = recursiveSetup(t, { folderError: true });
+  assert.equal((await request("/catalog/movie/gdrive_list.json")).status, 502);
+  assert.equal((await request("/playback/video/x.mkv")).status, 502);
+  assert.equal(
+    calls.filter((c) => c.url.searchParams.get("alt") === "media").length,
+    0,
+  );
+});
+
+test("recursive catalog keeps global newest-first order across folder batches at the file limit", async (t) => {
+  const graph = Array.from({ length: 51 }, (_, i) => ({
+    id: "child" + i,
+    parents: ["folder"],
+    mimeType: "application/vnd.google-apps.folder",
+  }));
+  const { request } = setup(t, {
+    env: { DRIVE_RECURSIVE: undefined },
+    handle: async (url) => {
+      const q = url.searchParams.get("q");
+      if (q?.includes("application/vnd.google-apps.folder"))
+        return Response.json({
+          files: q.includes("'folder' in parents") ? graph : [],
+        });
+      if (url.pathname === "/drive/v3/files") {
+        if (q.includes("'child50' in parents"))
+          return Response.json({
+            files: [
+              { ...video, id: "newest", createdTime: "2026-01-01T00:00:00Z" },
+            ],
+          });
+        return Response.json({
+          files: Array.from({ length: 1000 }, (_, i) => ({
+            ...video,
+            id: "old" + i,
+            createdTime: "2020-01-01T00:00:00Z",
+          })),
+        });
+      }
+    },
+  });
+  const result = await (
+    await request("/catalog/movie/gdrive_list.json")
+  ).json();
+  assert.equal(result.metas.length, 1000);
+  assert.equal(result.metas[0].id, "gdrive:newest");
 });

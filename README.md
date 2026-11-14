@@ -4,7 +4,7 @@
 
 This is a simple addon for Stremio that allows you to watch videos from Google Drive.
 
-By default, it searches your entire Google Drive and any shared drives you have access to for videos and presents them in Stremio. You can optionally restrict results to specific folders via `CONFIG.driveFolderIds`.
+By default, it searches your entire Google Drive and any shared drives you have access to for videos and presents them in Stremio. Use the `DRIVE_FOLDER_IDS` Worker variable to restrict results to specific root folders **including their subfolders**. Series/season folders are discovered automatically.
 
 If you combine it with some team drives, you have loads of content, all available to watch for free and without torrenting.
 
@@ -236,20 +236,18 @@ This table explains the configuration options:
 |           `proxiedPlayback`           	|      `boolean`     	| `true`, `false`                                                                                                                                  	| With `proxiedPlayback` enabled, the file will be streamed through the addon. If it is disabled, Stremio will stream directly from Google Drive. <br><br>If this option is disabled, streaming will not work on Stremio Web or through external players on iOS. You are also exposing your access token in the addon responses. <br><br>However, this option is experimental and may cause issues.<br><br>I recommend leaving it enabled, and only if you encounter issues, try disabling this option. <br><br>Note, that even with this enabled, anyone with your addon URL can still view your Google Drive files.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         	|
 | `driveQueryTerms.`<br>`episodeFormat` 	|      `String`      	| `"name"`, `"fullText"` (see the Drive v3 API for more)                                                                                           	| This setting changes the object that we perform the queries upon for the episode formats (s01e03).<br><br>I recommend leaving this to fullText. However, if you are getting incorrect matches, try switching to name                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        	|
 |   `driveQueryTerms.`<br>`movieYear`   	|      `String`      	| `"name"`, `"fullText"`                                                                                                                           	| This setting changes the object that we perform queries upon for the release year of the movie.<br><br>I recommend leaving this to name. However, if you are getting incorrect matches, try switching to fullText.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          	|
-|            `driveFolderIds`            |     `String[]`      | Google Drive folder IDs (e.g., `"1abc..."`, `"2def..."`)                                                  | Restricts both catalog and search to files **directly** inside any of the listed folders. Multiple IDs allowed. **Non‑recursive** (subfolders are ignored).                                                                                                             |
+|            `driveFolderIds`            |     `String[]`      | Google Drive folder IDs (e.g., `"1abc..."`, `"2def..."`)                                                  | Restricts catalog, search and playback to these roots **and their subfolders**. Configured through the `DRIVE_FOLDER_IDS` Worker variable. Set `DRIVE_RECURSIVE=false` to disable recursion.                                                                                                             |
 ### Folder filtering
 
 **Quick start**
 
-```js
-const CONFIG = {
-  // ...
-  driveFolderIds: [
-    "<FOLDER_ID_1>",
-    "<FOLDER_ID_2>"
-  ]
-};
+In Cloudflare Worker settings, add a **Text** variable:
+
+```text
+DRIVE_FOLDER_IDS=<ROOT_FOLDER_ID_1>,<ROOT_FOLDER_ID_2>
 ```
+
+Subfolders are included automatically. SRT files must stay in the same folder as their video. No source-code edits are needed.
 
 #### How to get the folder ID
 
@@ -267,6 +265,6 @@ const CONFIG = {
    - Same process: open the desired folder in the shared drive and copy the ID from the URL.
 
 > **Notes**
-> - The filter is **non-recursive**: subfolders are **not** automatically included. Add each subfolder in `driveFolderIds` if you want to include it.
-> - You can list **multiple** folder IDs in `driveFolderIds`.
+> - The filter is **recursive by default**. Add only the root folder IDs. Set `DRIVE_RECURSIVE=false` for direct children only.
+> - You can list **multiple** root folder IDs in `DRIVE_FOLDER_IDS`, separated by commas.
 > - Make sure the account used in OAuth has access to these folders; otherwise, nothing will be returned.

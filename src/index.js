@@ -1,3 +1,4 @@
+import { createDriveScope } from "./drive-scope.js";
 import { createSubtitleService, TimedCache } from "./subtitles.js";
 
 export function createAddon(env) {
@@ -39,6 +40,7 @@ export function createAddon(env) {
       episodeFormat: "fullText",
       titleName: "name",
     },
+    driveRecursive: env.DRIVE_RECURSIVE !== "false",
     driveFolderIds: (env.DRIVE_FOLDER_IDS || "")
       .split(",")
       .map((id) => id.trim())
@@ -47,7 +49,7 @@ export function createAddon(env) {
 
   const MANIFEST = {
     id: "stremio.gdrive.worker",
-    version: "1.1.0",
+    version: "1.2.0",
     name: CONFIG.addonName,
     description: "Stream your files from Google Drive within Stremio!",
     catalogs: [],
@@ -697,6 +699,11 @@ export function createAddon(env) {
       tokenFlight = undefined;
     }
   }
+  const driveScope = createDriveScope({
+    roots: CONFIG.driveFolderIds,
+    recursive: CONFIG.driveRecursive,
+    getToken: getAccessToken,
+  });
   const metadataCache = new TimedCache(60_000, 200);
   async function getProtectedFile(id) {
     if (!/^[a-zA-Z0-9_-]+$/.test(id || "")) return null;
@@ -705,18 +712,14 @@ export function createAddon(env) {
       if (!token) throw new Error("Google authentication unavailable");
       const file = await fetchFile(id, token);
       if (!file || file.trashed) return null;
-      if (
-        CONFIG.driveFolderIds.length &&
-        !file.parents?.some((id) => CONFIG.driveFolderIds.includes(id))
-      )
-        return null;
+      if (!(await driveScope.allows(file.parents))) return null;
       return file;
     });
   }
   const subtitles = createSubtitleService({
     getToken: getAccessToken,
     getFile: getProtectedFile,
-    allowedFolders: CONFIG.driveFolderIds,
+    isFolderAllowed: (id) => driveScope.allows([id]),
   });
   async function safeSubtitles(video, baseUrl) {
     try {
@@ -724,6 +727,35 @@ export function createAddon(env) {
     } catch {
       return [];
     } // An unavailable sidecar must not stop video playback.
+  }
+
+  async function fetchScopedFiles(fetchUrl, accessToken) {
+    const queries = await driveScope.queries(fetchUrl.searchParams.get("q"));
+    const combined = { files: [] };
+    const ordered = fetchUrl.searchParams.get("orderBy") === "createdTime desc";
+    const newestFirst = (a, b) =>
+      (b.createdTime || "").localeCompare(a.createdTime || "");
+    const seen = new Set();
+    for (const query of queries) {
+      const scopedUrl = new URL(fetchUrl);
+      scopedUrl.searchParams.set("q", query);
+      const page = await fetchFiles(scopedUrl, accessToken);
+      if (!page) return null;
+      combined.incompleteSearch ||= page.incompleteSearch;
+      for (const file of page.files) {
+        if (!seen.has(file.id)) {
+          seen.add(file.id);
+          combined.files.push(file);
+        }
+      }
+      if (ordered) {
+        // Later folder batches can contain newer files even if the first filled the limit.
+        combined.files.sort(newestFirst);
+        combined.files = combined.files.slice(0, CONFIG.maxFilesToFetch);
+      } else if (combined.files.length >= CONFIG.maxFilesToFetch) break;
+    }
+    combined.files = combined.files.slice(0, CONFIG.maxFilesToFetch);
+    return combined;
   }
 
   async function fetchFiles(fetchUrl, accessToken) {
@@ -813,13 +845,6 @@ export function createAddon(env) {
       q += ` and mimeType contains 'video/'`;
     }
 
-    if (CONFIG.driveFolderIds && CONFIG.driveFolderIds.length > 0) {
-      const folderQueries = CONFIG.driveFolderIds.map(
-        (id) => `'${id}' in parents`,
-      );
-      q += ` and (${folderQueries.join(" or ")})`;
-    }
-
     return q;
   }
 
@@ -832,13 +857,6 @@ export function createAddon(env) {
     query += CONFIG.showAudioFiles
       ? ` and (mimeType contains 'video/' or mimeType contains 'audio/')`
       : ` and mimeType contains 'video/'`;
-
-    if (CONFIG.driveFolderIds && CONFIG.driveFolderIds.length > 0) {
-      const folderQueries = CONFIG.driveFolderIds.map(
-        (id) => `'${id}' in parents`,
-      );
-      query += ` and (${folderQueries.join(" or ")})`;
-    }
 
     const sanitisedName = name
       .replace(/[^\p{L}\p{N}\s]/gu, "")
@@ -974,8 +992,6 @@ export function createAddon(env) {
               .replace(/'/g, "\\'");
             const lookup = new URL(API_ENDPOINTS.DRIVE_FETCH_FILES);
             let query = `trashed=false and mimeType contains 'video/' and name = '${escaped}'`;
-            if (CONFIG.driveFolderIds.length)
-              query += ` and (${CONFIG.driveFolderIds.map((id) => `'${id}' in parents`).join(" or ")})`;
             lookup.search = new URLSearchParams({
               q: query,
               corpora: "allDrives",
@@ -984,7 +1000,10 @@ export function createAddon(env) {
               fields: "nextPageToken,files(id,name,parents,mimeType,size)",
               pageSize: "100",
             });
-            const result = await fetchFiles(lookup, await getAccessToken());
+            const result = await fetchScopedFiles(
+              lookup,
+              await getAccessToken(),
+            );
             const candidates = (result?.files || []).filter(
               (f) =>
                 f.name === filename &&
@@ -1077,10 +1096,6 @@ export function createAddon(env) {
 
         if (catalogId === "gdrive_list") {
           const parts = ["trashed=false", "mimeType contains 'video/'"];
-          if (CONFIG.driveFolderIds && CONFIG.driveFolderIds.length > 0) {
-            const ors = CONFIG.driveFolderIds.map((id) => `'${id}' in parents`);
-            parts.push(`(${ors.join(" or ")})`);
-          }
 
           const queryParams = {
             q: parts.join(" and "),
@@ -1105,7 +1120,7 @@ export function createAddon(env) {
             });
           }
 
-          const results = await fetchFiles(fetchUrl, accessToken);
+          const results = await fetchScopedFiles(fetchUrl, accessToken);
           const metas = (results?.files || []).map((file) =>
             createMetaObject(
               file.id,
@@ -1146,7 +1161,7 @@ export function createAddon(env) {
             });
           }
 
-          const results = await fetchFiles(fetchUrl, accessToken);
+          const results = await fetchScopedFiles(fetchUrl, accessToken);
 
           if (!results?.files || results.files.length === 0) {
             return createJsonResponse({ metas: [] });
@@ -1336,7 +1351,7 @@ export function createAddon(env) {
       ];
     }
 
-    const results = await fetchFiles(fetchUrl, accessToken);
+    const results = await fetchScopedFiles(fetchUrl, accessToken);
 
     if (results?.incompleteSearch) {
     }

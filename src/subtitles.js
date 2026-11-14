@@ -113,7 +113,7 @@ export class TimedCache {
   }
 }
 
-export function createSubtitleService({ getToken, getFile, allowedFolders }) {
+export function createSubtitleService({ getToken, getFile, isFolderAllowed }) {
   const folders = new TimedCache(300_000, 32);
   const escape = (s) => s.replace(/\\/g, "\\\\").replace(/'/g, "\\'");
   async function listFolder(id) {
@@ -151,9 +151,9 @@ export function createSubtitleService({ getToken, getFile, allowedFolders }) {
     async forVideo(video, baseUrl) {
       if (!video.parents) video = await getFile(video.id);
       if (!video || !video.mimeType?.startsWith("video/")) return [];
-      const parents = (video.parents || []).filter(
-        (id) => !allowedFolders.length || allowedFolders.includes(id),
-      );
+      const parents = [];
+      for (const id of video.parents || [])
+        if (await isFolderAllowed(id)) parents.push(id);
       const seen = new Set();
       const result = [];
       for (const parent of parents) {

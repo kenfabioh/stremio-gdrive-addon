@@ -25,7 +25,8 @@ Não coloque credenciais no código, em issues, PRs ou mensagens. Nunca envie to
 | `CLIENT_SECRET` | Worker Secret: segredo OAuth Google |
 | `REFRESH_TOKEN` | Worker Secret: autorização de leitura Google com acesso offline |
 | `ADDON_TOKEN` | Worker Secret: chave aleatória base64url/hex com pelo menos 32 caracteres; protege todas as rotas |
-| `DRIVE_FOLDER_IDS` | Worker variável: IDs separados por vírgula, sem espaços obrigatórios. Opcional, mas recomendado |
+| `DRIVE_FOLDER_IDS` | Worker variável: IDs das pastas principais separados por vírgula. Inclui subpastas automaticamente. Opcional, mas recomendado |
+| `DRIVE_RECURSIVE` | Worker variável opcional: `false` desativa a recursão; o padrão é incluir subpastas |
 | `TMDB_API_KEY` | Worker Secret opcional |
 | `CLOUDFLARE_API_TOKEN` | Apenas deploy: token com Account / Workers Scripts / Edit para a conta específica |
 | `CLOUDFLARE_ACCOUNT_ID` | Apenas deploy: ID da conta Cloudflare |
@@ -61,7 +62,9 @@ Avatar.2009.en.sdh.srt
 
 O nome antes da extensão do vídeo deve ser o mesmo prefixo da legenda. A comparação ignora maiúsculas/minúsculas e normaliza Unicode NFC, mas não mistura releases, cortes ou episódios diferentes. Idioma ausente usa `und`; português usa `por`, inglês `eng`, francês `fre` e demais códigos ISO 639-2/B suportados estão em `src/subtitles.js`. O nome completo no `label` preserva `pt-BR`, SDH e forced. Mantenha os SRT preferencialmente em UTF-8; os bytes originais são servidos sem conversão, para preservar conteúdo, e a interpretação de outros encodings depende do player.
 
-A busca é não recursiva. Pastas compartilhadas funcionam se a conta OAuth tiver permissão. Para vídeos sem legendas, ou quando a API de legendas estiver indisponível, `subtitles` é uma lista vazia e o stream continua disponível.
+A busca inclui as pastas configuradas em `DRIVE_FOLDER_IDS` **e suas subpastas**, por padrão. Basta configurar a pasta principal, por exemplo `Séries`, para incluir `Séries/Nome da Série/Temporada 01`. Catálogo, busca, streams, metadados e acesso direto a vídeos/SRT seguem a mesma árvore autorizada. As legendas continuam sendo procuradas somente na pasta exata do vídeo, não nas pastas vizinhas. Para voltar ao filtro direto, configure `DRIVE_RECURSIVE=false`. Pastas compartilhadas funcionam se a conta OAuth tiver permissão; atalhos do Drive não são seguidos. Para vídeos sem legendas, ou quando a API de legendas estiver indisponível, `subtitles` é uma lista vazia e o stream continua disponível.
+
+A árvore de subpastas é descoberta em lotes de 50 pais por consulta e fica em cache por cinco minutos. A descoberta é limitada a 1.000 pastas e 24 requisições por varredura para conter uso de CPU/subrequests no Workers Free; árvores que excedem os limites, retornam erro ou têm busca incompleta são recusadas, sem ampliar o acesso para fora das raízes. Novas pastas podem levar até cinco minutos para aparecer em instâncias já ativas. Consultas de vídeos usam lotes para evitar URLs muito grandes, com deduplicação e ordenação global do catálogo por data de criação.
 
 A listagem de SRT é paginada e fica em cache por cinco minutos por pasta, com até 32 pastas e 2.000 registros por pasta. Metadados para acesso a arquivos ficam em cache por um minuto, até 200 arquivos. O access token é reutilizado até pouco antes de expirar, com deduplicação de renovações simultâneas. São caches em memória por instância, não globais/duráveis: podem ser descartados a qualquer momento. Mudanças de nomes/permissões podem levar até esses prazos para aparecer. Em bibliotecas muito grandes, limites de subrequests/CPU do plano Workers podem impedir consultas completas; limite as pastas. O catálogo mantém o limite original de 1.000 vídeos.
 
