@@ -732,9 +732,14 @@ export function createAddon(env) {
   async function fetchScopedFiles(fetchUrl, accessToken) {
     const queries = await driveScope.queries(fetchUrl.searchParams.get("q"));
     const combined = { files: [] };
-    const ordered = fetchUrl.searchParams.get("orderBy") === "createdTime desc";
+    const orderBy = fetchUrl.searchParams.get("orderBy");
+    const ordered = ["createdTime desc", "modifiedTime desc"].includes(orderBy);
+    const sortField =
+      orderBy === "modifiedTime desc" ? "modifiedTime" : "createdTime";
     const newestFirst = (a, b) =>
-      (b.createdTime || "").localeCompare(a.createdTime || "");
+      (b[sortField] || b.createdTime || "").localeCompare(
+        a[sortField] || a.createdTime || "",
+      );
     const seen = new Set();
     for (const query of queries) {
       const scopedUrl = new URL(fetchUrl);
@@ -803,8 +808,9 @@ export function createAddon(env) {
 
       results.files = results.files.slice(0, CONFIG.maxFilesToFetch);
       return results;
-    } catch (error) {
-      return null;
+    } catch {
+      // A failed Drive query must not masquerade as an empty library.
+      throw new Error("Google Drive listing unavailable");
     }
   }
 
@@ -1103,9 +1109,9 @@ export function createAddon(env) {
             includeItemsFromAllDrives: "true",
             supportsAllDrives: "true",
             pageSize: "1000",
-            orderBy: "createdTime desc",
+            orderBy: "modifiedTime desc",
             fields:
-              "nextPageToken,incompleteSearch,files(id,name,size,videoMediaMetadata,mimeType,fileExtension,thumbnailLink,createdTime)",
+              "nextPageToken,incompleteSearch,files(id,name,size,videoMediaMetadata,mimeType,fileExtension,thumbnailLink,createdTime,modifiedTime)",
           };
 
           const fetchUrl = new URL(API_ENDPOINTS.DRIVE_FETCH_FILES);
