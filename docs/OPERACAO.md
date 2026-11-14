@@ -92,7 +92,7 @@ No Worker novo: Settings / Builds / Connect, autorize o app oficial Cloudflare n
 - Branch de produção: `main`.
 - Diretório raiz: `/`.
 - Build command: `npm run check` (a instalação deve respeitar `package-lock.json`, usando `npm ci`).
-- Deploy command: `npm run deploy`. O `keep_vars = true` em `wrangler.toml` preserva as variáveis do painel, incluindo `DRIVE_FOLDER_IDS`, mesmo se o serviço chamar Wrangler diretamente. Até esse arquivo estar na main, use `npm run deploy -- --keep-vars`.
+- Deploy command: `npm run deploy -- --keep-vars`. O `keep_vars = true` em `wrangler.toml` também preserva as variáveis do painel, incluindo `DRIVE_FOLDER_IDS`, mesmo se o serviço chamar Wrangler diretamente.
 - Runtime de build: Node 24 (fixado em `.node-version`).
 - Desabilite builds/deploys de branches não produtivas. Não configure rotas/domínios de um addon antigo.
 - Deixe `DEPLOY_WITH_ACTIONS` ausente/false para evitar duas publicações do mesmo commit.
