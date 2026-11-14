@@ -1,0 +1,221 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      name="description"
+      content="Como o Stremio GDrive acessa e trata os dados do Google Drive para disponibilizar vídeos e legendas no Stremio."
+    />
+    <meta name="theme-color" content="#0b1220" />
+    <link rel="canonical" href="https://stremio.kenoshy.top/privacy/" />
+    <link rel="stylesheet" href="/styles.css" />
+    <title>Política de privacidade — Stremio GDrive</title>
+  </head>
+  <body>
+    <header>
+      <nav class="wrap" aria-label="Navegação principal">
+        <a class="brand" href="/">Stremio <span>GDrive</span></a>
+        <div class="navlinks">
+          <a href="/">Página inicial</a><a href="/#contato">Contato</a>
+        </div>
+      </nav>
+    </header>
+    <main class="wrap">
+      <article class="article">
+        <p class="eyebrow">Transparência no acesso aos seus arquivos</p>
+        <h1>Política de privacidade</h1>
+        <p class="updated">Última atualização: 14 de novembro de 2026.</p>
+        <p>
+          Esta política descreve o tratamento de dados pela instância do
+          <strong>Stremio GDrive</strong> apresentada em
+          <strong>stremio.kenoshy.top</strong>. O aplicativo é um addon
+          independente, configurado pelo responsável pela instância, para
+          consultar e transmitir arquivos do Google Drive ao Stremio.
+        </p>
+        <p>
+          O responsável pela operação desta instância pode ser contatado pelo
+          endereço
+          <a href="mailto:kenfabio@kenoshy.top">kenfabio@kenoshy.top</a>.
+        </p>
+
+        <h2>1. Dados acessados e finalidade</h2>
+        <p>Com a autorização da conta Google, o addon pode acessar:</p>
+        <ul>
+          <li>
+            <strong>Metadados dos arquivos e pastas:</strong> identificadores,
+            nomes, relações entre pastas, tipo de arquivo, tamanho, datas,
+            miniaturas e informações de vídeo, como duração e resolução.
+          </li>
+          <li>
+            <strong>Conteúdo dos vídeos e das legendas SRT:</strong> lido quando
+            necessário para transmitir o arquivo solicitado pelo Stremio.
+          </li>
+          <li>
+            <strong>Credenciais OAuth:</strong> identificador e segredo do
+            cliente Google, refresh token e access tokens necessários à
+            autorização da instância.
+          </li>
+        </ul>
+        <p>
+          Esses dados são usados para criar catálogos, pesquisar arquivos,
+          encontrar vídeos nas pastas autorizadas pelo responsável, associar
+          legendas e atender pedidos de reprodução. O addon não possui funções
+          para criar, modificar ou excluir arquivos do Google Drive.
+        </p>
+
+        <h2>2. Permissão do Google Drive</h2>
+        <p>
+          O aplicativo utiliza o escopo
+          <code>https://www.googleapis.com/auth/drive.readonly</code>. Essa
+          permissão pode abranger os arquivos da conta e os arquivos
+          compartilhados aos quais ela tem acesso. Ela é necessária para
+          localizar e ler vídeos já existentes no Drive.
+        </p>
+        <p>
+          O responsável pode restringir a biblioteca do addon por IDs de pastas
+          e suas subpastas. Essa restrição é aplicada pelo aplicativo; ela não
+          transforma a permissão OAuth ampla de leitura em uma permissão
+          limitada pelo Google a essas pastas.
+        </p>
+        <p>
+          A autorização é configurada pelo responsável pela instância. Este site
+          não coleta senhas Google e não oferece cadastro público de contas.
+        </p>
+
+        <h2>3. Processamento e armazenamento</h2>
+        <p>
+          O addon é executado no Cloudflare Workers. O segredo do cliente e o
+          refresh token ficam configurados como Secrets do Worker. Access tokens
+          são mantidos em memória para uso nas requisições ao Google e renovados
+          quando necessário.
+        </p>
+        <p>
+          Metadados são armazenados temporariamente em caches de memória:
+          aproximadamente um minuto para o catálogo e os metadados de arquivos,
+          e até cinco minutos para pastas, corpus do Drive e listagens de
+          legendas. Esses caches podem ser descartados antes desses prazos.
+        </p>
+        <p>
+          O addon não mantém uma cópia permanente dos vídeos ou das legendas. A
+          reprodução usa transmissão por streaming e pode solicitar trechos de
+          um vídeo por HTTP Range. O Stremio e outros players podem armazenar
+          arquivos ou trechos localmente de acordo com suas próprias
+          configurações.
+        </p>
+        <p>
+          Os logs de observabilidade do aplicativo estão desativados na
+          configuração atual. Isso não elimina os registros operacionais, de
+          segurança ou de infraestrutura que os provedores possam tratar segundo
+          suas próprias políticas.
+        </p>
+
+        <h2>4. Serviços envolvidos e compartilhamento</h2>
+        <ul>
+          <li>
+            <strong>Google:</strong> fornece autorização OAuth, metadados e
+            conteúdo do Drive.
+          </li>
+          <li>
+            <strong>Cloudflare:</strong> hospeda este site e executa o Worker
+            que processa consultas e transmite os arquivos ao player.
+          </li>
+          <li>
+            <strong>Stremio e o player escolhido:</strong> recebem os metadados,
+            as opções de reprodução e o conteúdo solicitado.
+          </li>
+          <li>
+            <strong>Provedores de metadados:</strong> consultas por
+            identificadores de títulos podem envolver Cinemeta, IMDb, Kitsu e,
+            se configurado, TMDB. O addon não envia as credenciais OAuth Google
+            ou o conteúdo dos vídeos e SRT a esses provedores.
+          </li>
+        </ul>
+        <p>
+          Provedores de infraestrutura e clientes que participam dessas conexões
+          podem processar endereços IP, informações técnicas e URLs das
+          requisições. Seus próprios termos e políticas também se aplicam.
+        </p>
+        <p>
+          O aplicativo não vende dados obtidos do Google, não os utiliza para
+          publicidade e não os utiliza para treinar modelos de inteligência
+          artificial de uso geral.
+        </p>
+        <p>
+          O uso e a transferência de informações recebidas das APIs do Google
+          seguem a
+          <a
+            href="https://developers.google.com/terms/api-services-user-data-policy"
+            rel="noopener noreferrer"
+            >Política de Dados do Usuário dos Serviços de API do Google</a
+          >, incluindo os requisitos de Uso Limitado.
+        </p>
+
+        <h2>5. Acesso privado e segurança</h2>
+        <p>
+          Os endpoints da biblioteca, dos vídeos e das legendas exigem a chave
+          privada de instalação. Quem possui o endereço completo com essa chave
+          pode acessar os arquivos disponibilizados pela instância. A chave não
+          identifica usuários individualmente e não deve ser publicada ou
+          compartilhada com pessoas não autorizadas.
+        </p>
+        <p>
+          A página inicial e esta política são públicas e não exibem a chave, as
+          credenciais Google, os nomes dos seus arquivos ou sua biblioteca. As
+          conexões com o Google e os endereços de produção utilizam HTTPS.
+        </p>
+
+        <h2>6. Revogação, retenção e exclusão</h2>
+        <p>
+          Você pode revogar a autorização na seção
+          <a
+            href="https://myaccount.google.com/connections"
+            rel="noopener noreferrer"
+            >Conexões com apps e serviços de terceiros</a
+          >
+          da sua Conta Google. Para interromper a operação da instância e
+          remover as credenciais do servidor, o responsável deve excluir os
+          Secrets OAuth no Cloudflare.
+        </p>
+        <p>
+          Os Secrets permanecem armazenados até que o responsável os remova ou
+          substitua. Metadados em cache permanecem somente durante os prazos
+          temporários descritos acima ou até o descarte da instância. A
+          revogação não apaga cópias já baixadas por um player nem registros
+          mantidos pelos provedores conforme suas políticas.
+        </p>
+        <p>
+          Para solicitar ajuda, exclusão de credenciais ou esclarecimentos,
+          escreva para
+          <a href="mailto:kenfabio@kenoshy.top">kenfabio@kenoshy.top</a>. Não
+          inclua tokens, senhas ou chaves privadas na mensagem.
+        </p>
+
+        <h2>7. Este site informativo</h2>
+        <p>
+          As páginas deste site não incluem ferramentas próprias de publicidade,
+          analytics ou formulários de coleta de dados, e não definem cookies
+          pelo código do site. O Cloudflare pode tratar dados técnicos
+          necessários à hospedagem e à segurança.
+        </p>
+
+        <h2>8. Atualizações e contato</h2>
+        <p>
+          Esta política pode ser atualizada para refletir mudanças no
+          funcionamento do aplicativo. A data da versão vigente consta no início
+          da página. Dúvidas podem ser encaminhadas a
+          <a href="mailto:kenfabio@kenoshy.top">kenfabio@kenoshy.top</a>.
+        </p>
+        <p><a href="/">Voltar à página inicial</a></p>
+      </article>
+    </main>
+    <footer>
+      <div class="wrap">
+        <p>
+          Stremio GDrive — projeto independente, sem vínculo oficial com Google
+          ou Stremio.
+        </p>
+      </div>
+    </footer>
+  </body>
+</html>
