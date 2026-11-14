@@ -2,6 +2,7 @@ name = "stremio-gdrive"
 main = "src/index.js"
 compatibility_date = "2026-11-14"
 workers_dev = true
+keep_vars = true
 preview_urls = true
 compatibility_flags = [ "nodejs_compat" ]
 [observability.logs]
