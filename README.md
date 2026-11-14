@@ -1,5 +1,7 @@
 # Stremio GDrive Addon 
 
+> **Fork com legendas SRT:** consulte [Operação, segurança, Google Drive e publicação automática](docs/OPERACAO.md). Esta versão exige Worker Secrets (incluindo `ADDON_TOKEN`), fornece `stream.subtitles` e o recurso `subtitles`, e mantém vídeos/SRT atrás de uma URL de instalação privada. As instruções antigas abaixo que sugerem colar credenciais no código ou usar um gerador externo foram substituídas pelo procedimento seguro do guia do fork. A opção antiga `proxiedPlayback=false` foi removida para não expor tokens Google.
+
 This is a simple addon for Stremio that allows you to watch videos from Google Drive.
 
 By default, it searches your entire Google Drive and any shared drives you have access to for videos and presents them in Stremio. You can optionally restrict results to specific folders via `CONFIG.driveFolderIds`.
