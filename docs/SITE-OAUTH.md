@@ -2,7 +2,11 @@
 
 As páginas estáticas ficam em `site/` e são publicadas no Cloudflare Pages, separadas do Worker privado do addon.
 
-Endereços desejados:
+Projeto Cloudflare Pages: **`kenoshy-stremio`**, conectado ao fork e à branch `main`.
+
+Endereço auxiliar do Pages: `https://kenoshy-stremio.pages.dev/`.
+
+Endereços do domínio próprio:
 
 - Página inicial: `https://stremio.kenoshy.top/`
 - Política de privacidade: `https://stremio.kenoshy.top/privacy/`
@@ -13,7 +17,7 @@ O nome do aplicativo apresentado nas páginas é **Stremio GDrive** e deve coinc
 
 ## Hospedagem e atualização
 
-No Cloudflare Pages, conectar o fork `kenfabioh/stremio-gdrive-addon`:
+Configuração do projeto no Cloudflare Pages, conectado ao fork `kenfabioh/stremio-gdrive-addon`:
 
 - Branch de produção: `main`.
 - Framework: nenhum (HTML estático).
@@ -32,7 +36,7 @@ Atualizações são feitas por PR neste fork. O projeto Pages deve observar `sit
 O domínio pode permanecer registrado no NameSilo. Para o subdomínio do Pages, não é necessário transferir o registro do domínio nem migrar os nameservers.
 
 1. Primeiro, adicionar `stremio.kenoshy.top` aos domínios personalizados do projeto Pages.
-2. No provedor que efetivamente gerencia o DNS, adicionar um registro **CNAME** com host `stremio` apontando para o hostname `*.pages.dev` retornado pelo projeto. Não adivinhar o hostname antes da criação do projeto.
+2. No provedor que efetivamente gerencia o DNS, adicionar um registro **CNAME** com host `stremio`, destino **`kenoshy-stremio.pages.dev`** e TTL padrão ou 3600. O destino é o hostname confirmado pela API do projeto criado.
 3. Aguardar o Cloudflare confirmar o domínio e emitir o certificado HTTPS.
 
 Preservar os registros existentes de e-mail e verificação do Google Workspace: MX, SPF, DKIM, DMARC e TXT. Não alterar os nameservers ou substituir registros de outros serviços para concluir esta configuração. Se já houver um registro no host `stremio`, investigar antes de substituí-lo.
