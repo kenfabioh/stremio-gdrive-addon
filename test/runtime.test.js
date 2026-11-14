@@ -15,7 +15,7 @@ test(
     const video = {
       id: "v",
       name: "Movie.mkv",
-      parents: ["folder"],
+      parents: ["season"],
       mimeType: "video/x-matroska",
       fileExtension: "mkv",
       size: "5000000000",
@@ -23,7 +23,7 @@ test(
     const sidecar = {
       id: "s",
       name: "Movie.pt-BR.srt",
-      parents: ["folder"],
+      parents: ["season"],
       mimeType: "application/x-subrip",
     };
     const srt = "1\n00:00:01,000 --> 00:00:02,000\nOlá!\n";
@@ -36,6 +36,7 @@ test(
         modules: [
           { type: "ESModule", path: "src/index.js" },
           { type: "ESModule", path: "src/subtitles.js" },
+          { type: "ESModule", path: "src/drive-scope.js" },
         ],
         compatibilityDate: "2026-11-14",
         compatibilityFlags: ["nodejs_compat"],
@@ -66,8 +67,32 @@ test(
           }
           if (url.pathname.endsWith("/v")) return json(video);
           if (url.pathname.endsWith("/s")) return json(sidecar);
-          if (url.pathname === "/drive/v3/files")
+          if (url.pathname === "/drive/v3/files") {
+            const q = url.searchParams.get("q");
+            if (q.includes("application/vnd.google-apps.folder")) {
+              const graph = [
+                {
+                  id: "series",
+                  parents: ["folder"],
+                  mimeType: "application/vnd.google-apps.folder",
+                },
+                {
+                  id: "season",
+                  parents: ["series"],
+                  mimeType: "application/vnd.google-apps.folder",
+                },
+              ];
+              const parents = [...q.matchAll(/'([^']+)' in parents/g)].map(
+                (m) => m[1],
+              );
+              return json({
+                files: graph.filter((f) =>
+                  f.parents.some((id) => parents.includes(id)),
+                ),
+              });
+            }
             return json({ files: [sidecar] });
+          }
           throw Error("Unexpected outbound request");
         },
       }),
