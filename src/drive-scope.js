@@ -9,6 +9,7 @@ export const parentQuery = (ids) =>
 // Build the complete scope before exposing any results. Fail closed on limits/errors.
 export function createDriveScope({ roots, recursive = true, getToken }) {
   const cache = new TimedCache(300_000, 1);
+  const corpusCache = new TimedCache(300_000, 1);
   async function folders() {
     if (!roots.length || !recursive) return new Set(roots);
     return cache.get("tree", async () => {
@@ -68,22 +69,62 @@ export function createDriveScope({ roots, recursive = true, getToken }) {
       return found;
     });
   }
+  async function batches(query) {
+    if (!roots.length) return [{ query, parents: null }];
+    const ids = [...(await folders())];
+    const result = [];
+    for (let i = 0; i < ids.length; i += BATCH_SIZE) {
+      const parents = ids.slice(i, i + BATCH_SIZE);
+      result.push({ query: `${query} and ${parentQuery(parents)}`, parents });
+    }
+    return result;
+  }
   return {
     folders,
+    async fallbackCorpora() {
+      if (!roots.length) return [{ corpora: "allDrives" }];
+      return corpusCache.get("corpora", async () => {
+        const token = await getToken();
+        if (!token) throw new Error("Google authentication unavailable");
+        const corpora = new Map();
+        for (const id of new Set(roots)) {
+          const url = new URL(
+            `https://content.googleapis.com/drive/v3/files/${encodeURIComponent(id)}`,
+          );
+          url.search = new URLSearchParams({
+            fields: "id,mimeType,driveId,trashed",
+            supportsAllDrives: "true",
+          });
+          const response = await fetch(url, {
+            headers: { Authorization: `Bearer ${token}` },
+          });
+          if (!response.ok)
+            throw Object.assign(new Error("Root folder metadata unavailable"), {
+              upstreamStatus: response.status,
+            });
+          const folder = await response.json();
+          if (folder.trashed || folder.mimeType !== FOLDER)
+            throw new Error("Invalid root folder");
+          if (folder.driveId) {
+            if (!/^[a-zA-Z0-9_-]+$/.test(folder.driveId))
+              throw new Error("Invalid drive id");
+            corpora.set(folder.driveId, {
+              corpora: "drive",
+              driveId: folder.driveId,
+            });
+          } else corpora.set("user", { corpora: "user" });
+        }
+        return [...corpora.values()];
+      });
+    },
     async allows(parents = []) {
       if (!roots.length) return true;
       const allowed = await folders();
       return parents.some((id) => allowed.has(id));
     },
+    batches,
     async queries(query) {
-      if (!roots.length) return [query];
-      const ids = [...(await folders())];
-      const queries = [];
-      for (let i = 0; i < ids.length; i += BATCH_SIZE)
-        queries.push(
-          `${query} and ${parentQuery(ids.slice(i, i + BATCH_SIZE))}`,
-        );
-      return queries;
+      return (await batches(query)).map((batch) => batch.query);
     },
   };
 }
