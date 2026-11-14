@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      name="description"
+      content="Stremio GDrive: addon independente para acessar seus vídeos do Google Drive no Stremio, com pastas de séries e legendas SRT externas."
+    />
+    <meta name="theme-color" content="#0b1220" />
+    <link rel="canonical" href="https://stremio.kenoshy.top/" />
+    <link rel="stylesheet" href="/styles.css" />
+    <title>Stremio GDrive — Seus vídeos no Stremio</title>
+  </head>
+  <body>
+    <header>
+      <nav class="wrap" aria-label="Navegação principal">
+        <a class="brand" href="/">Stremio <span>GDrive</span></a>
+        <div class="navlinks">
+          <a href="#como-funciona">Como funciona</a
+          ><a href="/privacy/">Privacidade</a><a href="#contato">Contato</a>
+        </div>
+      </nav>
+    </header>
+    <main class="wrap">
+      <section class="hero" aria-labelledby="titulo">
+        <p class="eyebrow">Seu acervo, organizado por você</p>
+        <h1 id="titulo">Seus vídeos do Google Drive, no Stremio.</h1>
+        <p class="lead">
+          O Stremio GDrive é um addon independente que apresenta seus arquivos
+          de vídeo no Stremio e encontra legendas SRT na mesma pasta de cada
+          vídeo.
+        </p>
+        <div class="actions">
+          <a class="button" href="#como-funciona">Conheça o funcionamento</a
+          ><a class="button secondary" href="/privacy/"
+            >Política de privacidade</a
+          >
+        </div>
+      </section>
+      <div class="grid">
+        <section class="card">
+          <h2>Pastas e séries</h2>
+          <p>
+            Organize seu acervo em pastas de filmes, séries e temporadas. O
+            addon inclui as subpastas das pastas configuradas.
+          </p>
+        </section>
+        <section class="card">
+          <h2>Legendas externas</h2>
+          <p>
+            Arquivos SRT são associados ao nome do vídeo. Sufixos como
+            <code>.pt-BR.srt</code> e <code>.en.srt</code> identificam o idioma.
+          </p>
+        </section>
+        <section class="card">
+          <h2>Acesso de leitura</h2>
+          <p>
+            A autorização Google é usada para consultar e transmitir arquivos. O
+            addon não cria, modifica ou exclui arquivos no Drive.
+          </p>
+        </section>
+      </div>
+      <section class="section" id="como-funciona">
+        <h2>Como funciona</h2>
+        <ol>
+          <li>
+            O responsável pela instância autoriza a conta Google por OAuth e
+            configura as pastas que deseja disponibilizar.
+          </li>
+          <li>
+            O addon consulta os metadados do Drive para montar catálogos,
+            localizar vídeos e associar as legendas correspondentes.
+          </li>
+          <li>
+            O Stremio recebe as opções de reprodução. Os vídeos e as legendas
+            são transmitidos por um Worker no Cloudflare.
+          </li>
+        </ol>
+        <p>
+          O escopo solicitado é
+          <code>https://www.googleapis.com/auth/drive.readonly</code>. Ele
+          permite ler arquivos preexistentes da conta, inclusive aqueles em
+          pastas e Drives compartilhados aos quais a conta tem acesso. O filtro
+          de pastas do addon não reduz o alcance da permissão OAuth concedida ao
+          Google.
+        </p>
+        <div class="notice">
+          <p>
+            Este site é informativo e não abre sua biblioteca. O endereço de
+            instalação do addon contém uma chave privada e deve ser mantido em
+            sigilo. Esta página não solicita senhas, tokens ou arquivos
+            pessoais.
+          </p>
+        </div>
+        <p>
+          A instância é configurada pelo seu responsável. Não há cadastro
+          público nem autorização de novas contas Google nesta página.
+        </p>
+      </section>
+      <section class="section" id="contato">
+        <h2>Contato e suporte</h2>
+        <p>
+          Para dúvidas sobre esta instância, privacidade, revogação de acesso ou
+          exclusão de credenciais, entre em contato com o responsável pelo
+          aplicativo:
+        </p>
+        <p><a href="mailto:kenfabio@kenoshy.top">kenfabio@kenoshy.top</a></p>
+        <p class="small">
+          Não envie senhas, tokens, chaves de instalação ou arquivos privados em
+          mensagens de suporte.
+        </p>
+      </section>
+    </main>
+    <footer>
+      <div class="wrap">
+        <strong>Stremio GDrive</strong>
+        <div class="footerlinks">
+          <a href="/privacy/">Política de privacidade</a
+          ><a
+            href="https://github.com/kenfabioh/stremio-gdrive-addon"
+            rel="noopener noreferrer"
+            >Código-fonte</a
+          ><a href="#contato">Contato</a>
+        </div>
+        <p>
+          Projeto independente. Não é um serviço oficial do Google ou do
+          Stremio.
+        </p>
+      </div>
+    </footer>
+  </body>
+</html>
